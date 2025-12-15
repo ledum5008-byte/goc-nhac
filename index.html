@@ -1,0 +1,211 @@
+<script>
+let songs = [];
+let currentSongIndex = -1;
+let isPlaying = false;
+let visualizerInterval = null;
+
+const audioPlayer = document.getElementById('audioPlayer');
+const STORAGE_KEY = 'goc_nhac_index';
+
+// ===== VISUALIZER =====
+const visualizer = document.getElementById('visualizer');
+for (let i = 0; i < 20; i++) {
+  const bar = document.createElement('div');
+  bar.className = 'bar';
+  bar.style.height = '5px';
+  visualizer.appendChild(bar);
+}
+
+function updateVisualizer() {
+  const bars = document.querySelectorAll('.bar');
+  bars.forEach(bar => {
+    bar.style.height = isPlaying
+      ? Math.random() * 40 + 10 + 'px'
+      : '5px';
+  });
+}
+
+// ===== PLAYLIST =====
+function renderPlaylist() {
+  const playlist = document.getElementById('playlist');
+  playlist.innerHTML = '';
+
+  if (songs.length === 0) {
+    playlist.innerHTML =
+      '<div style="text-align:center;color:#999;padding:20px">Chưa có bài hát</div>';
+    return;
+  }
+
+  songs.forEach((song, index) => {
+    const div = document.createElement('div');
+    div.className = 'playlist-item' + (index === currentSongIndex ? ' active' : '');
+    div.innerHTML = `
+      <div class="icon">🎵</div>
+      <div class="info">
+        <div class="title">${song.title}</div>
+        <div class="artist">${song.artist}</div>
+      </div>
+      <button class="remove-btn">×</button>
+    `;
+
+    div.onclick = e => {
+      if (e.target.classList.contains('remove-btn')) {
+        removeSong(index);
+      } else {
+        loadSong(index);
+        play();
+      }
+    };
+
+    playlist.appendChild(div);
+  });
+}
+
+function removeSong(index) {
+  songs.splice(index, 1);
+  if (currentSongIndex === index) stop();
+  if (currentSongIndex > index) currentSongIndex--;
+  renderPlaylist();
+}
+
+// ===== PLAYER =====
+function loadSong(index) {
+  if (!songs[index]) return;
+  currentSongIndex = index;
+  audioPlayer.src = songs[index].url;
+  audioPlayer.load();
+  updateInfo();
+  renderPlaylist();
+  saveIndex();
+}
+
+function play() {
+  if (currentSongIndex === -1 && songs.length > 0) {
+    loadSong(0);
+  }
+  audioPlayer.play();
+}
+
+function pause() {
+  audioPlayer.pause();
+}
+
+function stop() {
+  pause();
+  currentSongIndex = -1;
+  updateInfo();
+}
+
+function togglePlayPause() {
+  isPlaying ? pause() : play();
+}
+
+function nextSong() {
+  if (songs.length === 0) return;
+  loadSong((currentSongIndex + 1) % songs.length);
+  play();
+}
+
+function prevSong() {
+  if (songs.length === 0) return;
+  loadSong((currentSongIndex - 1 + songs.length) % songs.length);
+  play();
+}
+
+// ===== UI UPDATE =====
+function updateInfo() {
+  const title = document.getElementById('songTitle');
+  const artist = document.getElementById('songArtist');
+
+  if (currentSongIndex >= 0) {
+    title.textContent = songs[currentSongIndex].title;
+    artist.textContent = songs[currentSongIndex].artist;
+  } else {
+    title.textContent = 'Chọn bài hát để phát';
+    artist.textContent = 'Playlist trống';
+  }
+}
+
+function formatTime(t) {
+  if (isNaN(t)) return '0:00';
+  const m = Math.floor(t / 60);
+  const s = Math.floor(t % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
+}
+
+// ===== AUDIO EVENTS =====
+audioPlayer.onplay = () => {
+  isPlaying = true;
+  document.getElementById('playPauseBtn').textContent = '⏸️';
+  document.getElementById('albumArt').classList.add('playing');
+  visualizerInterval = setInterval(updateVisualizer, 120);
+};
+
+audioPlayer.onpause = () => {
+  isPlaying = false;
+  document.getElementById('playPauseBtn').textContent = '▶️';
+  document.getElementById('albumArt').classList.remove('playing');
+  clearInterval(visualizerInterval);
+};
+
+audioPlayer.ontimeupdate = () => {
+  const p = (audioPlayer.currentTime / audioPlayer.duration) * 100 || 0;
+  document.getElementById('progressFill').style.width = p + '%';
+  document.getElementById('currentTime').textContent = formatTime(audioPlayer.currentTime);
+  document.getElementById('duration').textContent = formatTime(audioPlayer.duration);
+};
+
+audioPlayer.onended = nextSong;
+
+// ===== CONTROLS =====
+document.getElementById('playPauseBtn').onclick = togglePlayPause;
+document.getElementById('nextBtn').onclick = nextSong;
+document.getElementById('prevBtn').onclick = prevSong;
+
+document.getElementById('progressBar').onclick = e => {
+  if (!audioPlayer.duration) return;
+  const r = e.currentTarget.getBoundingClientRect();
+  audioPlayer.currentTime = ((e.clientX - r.left) / r.width) * audioPlayer.duration;
+};
+
+// ===== VOLUME =====
+const volumeFill = document.getElementById('volumeFill');
+audioPlayer.volume = 0.7;
+
+document.getElementById('volumeSlider').onclick = e => {
+  const r = e.currentTarget.getBoundingClientRect();
+  const v = Math.min(Math.max((e.clientX - r.left) / r.width, 0), 1);
+  audioPlayer.volume = v;
+  volumeFill.style.width = v * 100 + '%';
+};
+
+// ===== ADD MUSIC =====
+document.getElementById('addMusicBtn').onclick = () =>
+  document.getElementById('fileInput').click();
+
+document.getElementById('fileInput').onchange = e => {
+  [...e.target.files].forEach(file => {
+    songs.push({
+      title: file.name.replace(/\.[^/.]+$/, ''),
+      artist: 'Nhạc của bạn',
+      url: URL.createObjectURL(file)
+    });
+  });
+  renderPlaylist();
+  if (currentSongIndex === -1 && songs.length > 0) loadSong(0);
+};
+
+// ===== STORAGE =====
+function saveIndex() {
+  localStorage.setItem(STORAGE_KEY, currentSongIndex);
+}
+
+function loadIndex() {
+  const i = localStorage.getItem(STORAGE_KEY);
+  if (i !== null) currentSongIndex = Number(i);
+}
+
+loadIndex();
+renderPlaylist();
+updateInfo();
+</script>
